@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Union
 from ..models.table.realtime_agent import RealtimeAgent
 from ..models.table.custom_agent import CustomAgent
-from ..models.table.schemas import AgentCreate
 from ..models.table.user import User
 from ..models import get_session
 from ..routers.core.auth.router import get_current_user
@@ -17,35 +16,30 @@ router = APIRouter(
     tags=["agents"],
     responses={404: {"description": "Not found"}},
 )
+class AgentCreate(BaseModel):
+    name: str
+    type: str
 
 @router.post("/create", response_model=Union[RealtimeAgent, CustomAgent])
 async def create_agent(agent_in: AgentCreate, session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
     if agent_in.type == "realtime":
         config = agent_in.config or {}
-        if "model" not in config:
-            raise HTTPException(status_code=400, detail="model is required for realtime agents")
-        if "voice" not in config:
-            raise HTTPException(status_code=400, detail="voice is required for realtime agents")
-
+        
         agent = RealtimeAgent(
             name=agent_in.name,
             user_id=current_user.id,
-            config=agent_in.config,
-            model=config["model"],
-            voice=config["voice"],
+            model=config.get("model"),
+            voice=config.get("voice"),
             system_prompt=config.get("system_prompt"),
             greeting_prompt=config.get("greeting_prompt")
         )
     elif agent_in.type == "custom":
         config = agent_in.config or {}
-        if "llm_websocket_url" not in config:
-            raise HTTPException(status_code=400, detail="llm_websocket_url is required for custom agents")
         
         agent = CustomAgent(
             name=agent_in.name,
             user_id=current_user.id,
-            config=agent_in.config,
-            llm_websocket_url=config["llm_websocket_url"]
+            llm_websocket_url=config.get("llm_websocket_url")
         )
     else:
         raise HTTPException(status_code=400, detail="Invalid agent type")
@@ -53,6 +47,29 @@ async def create_agent(agent_in: AgentCreate, session: AsyncSession = Depends(ge
     session.add(agent)
     await session.commit()
     await session.refresh(agent)
+    return agent
+
+@router.get("/get/{agent_id}", response_model=Union[RealtimeAgent, CustomAgent])
+async def get_agent(
+    agent_id: str, 
+    type: str, 
+    session: AsyncSession = Depends(get_session), 
+    current_user: User = Depends(get_current_user)
+):
+    if type == "realtime":
+        statement = select(RealtimeAgent).where(RealtimeAgent.id == agent_id, RealtimeAgent.user_id == current_user.id)
+        result = await session.execute(statement)
+        agent = result.scalars().first()
+    elif type == "custom":
+        statement = select(CustomAgent).where(CustomAgent.id == agent_id, CustomAgent.user_id == current_user.id)
+        result = await session.execute(statement)
+        agent = result.scalars().first()
+    else:
+        raise HTTPException(status_code=400, detail="Invalid agent type")
+
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
     return agent
 
 @router.get("/get", response_model=List[Union[RealtimeAgent, CustomAgent]])
