@@ -59,3 +59,39 @@ async def signin(user: UserLogin, session: Session = Depends(get_session)):
     
     access_token = create_access_token(data={"sub": db_user.email})
     return {"access_token": access_token, "token_type": "bearer"}
+
+from fastapi.security import OAuth2PasswordBearer
+from app.utils.security import SECRET_KEY, ALGORITHM
+import jwt
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/signin")
+
+async def get_current_user(token: str = Depends(oauth2_scheme), session: Session = Depends(get_session)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+    except jwt.PyJWTError:
+        raise credentials_exception
+        
+    statement = select(User).where(User.email == email)
+    result = await session.execute(statement)
+    user = result.scalars().first()
+    if user is None:
+        raise credentials_exception
+    return user
+
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+
+@router.get("/me", response_model=UserResponse)
+async def read_users_me(current_user: User = Depends(get_current_user)):
+    return current_user
