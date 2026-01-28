@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from sqlmodel import select, Session
 from app.models import get_session
 from app.models.table.user import User
@@ -9,11 +9,11 @@ router = APIRouter()
 
 class UserCreate(BaseModel):
     name: str
-    email: EmailStr
+    email: str
     password: str
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 class Token(BaseModel):
@@ -90,7 +90,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: Session
 class UserResponse(BaseModel):
     id: int
     name: str
-    email: EmailStr
+    email: str
 
 @router.get("/me", response_model=UserResponse)
 async def read_users_me(current_user: User = Depends(get_current_user)):
