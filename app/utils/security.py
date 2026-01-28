@@ -30,4 +30,5 @@ def create_refresh_token(data: dict):
     expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt, expire
+    # Return timezone-naive datetime for PostgreSQL TIMESTAMP WITHOUT TIME ZONE
+    return encoded_jwt, expire.replace(tzinfo=None)

@@ -9,6 +9,7 @@ class CustomAgent(SQLModel, table=True):
     name: str = Field(index=True)
     user_id: int = Field(foreign_key="voice-agent-user.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    type: str = Field(default="custom")  # Agent type identifier
     
     # Custom specific fields
     llm_websocket_url: Optional[str] = Field(default=None)

@@ -31,12 +31,29 @@ class CustomAgentUpdate(BaseModel):
 
 @router.post("/create", response_model=Union[RealtimeAgent, CustomAgent])
 async def create_agent(agent_in: AgentCreate, session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
+    # Check for duplicate agent name under the same user
     if agent_in.type == "realtime":
+        existing_statement = select(RealtimeAgent).where(
+            RealtimeAgent.name == agent_in.name,
+            RealtimeAgent.user_id == current_user.id
+        )
+        existing_result = await session.execute(existing_statement)
+        if existing_result.scalars().first():
+            raise HTTPException(status_code=400, detail="An agent with this name already exists")
+        
         agent = RealtimeAgent(
             name=agent_in.name,
             user_id=current_user.id
         )
     elif agent_in.type == "custom":
+        existing_statement = select(CustomAgent).where(
+            CustomAgent.name == agent_in.name,
+            CustomAgent.user_id == current_user.id
+        )
+        existing_result = await session.execute(existing_statement)
+        if existing_result.scalars().first():
+            raise HTTPException(status_code=400, detail="An agent with this name already exists")
+        
         agent = CustomAgent(
             name=agent_in.name,
             user_id=current_user.id
@@ -99,19 +116,25 @@ async def update_custom_agent(
     await session.refresh(agent)
     return agent
 
-@router.get("/get/{agent_id}", response_model=Union[RealtimeAgent, CustomAgent])
+@router.get("/get/{agent_name}", response_model=Union[RealtimeAgent, CustomAgent])
 async def get_agent(
-    agent_id: str, 
+    agent_name: str, 
     type: str, 
     session: AsyncSession = Depends(get_session), 
     current_user: User = Depends(get_current_user)
 ):
     if type == "realtime":
-        statement = select(RealtimeAgent).where(RealtimeAgent.id == agent_id, RealtimeAgent.user_id == current_user.id)
+        statement = select(RealtimeAgent).where(
+            RealtimeAgent.name == agent_name,
+            RealtimeAgent.user_id == current_user.id
+        )
         result = await session.execute(statement)
         agent = result.scalars().first()
     elif type == "custom":
-        statement = select(CustomAgent).where(CustomAgent.id == agent_id, CustomAgent.user_id == current_user.id)
+        statement = select(CustomAgent).where(
+            CustomAgent.name == agent_name,
+            CustomAgent.user_id == current_user.id
+        )
         result = await session.execute(statement)
         agent = result.scalars().first()
     else:

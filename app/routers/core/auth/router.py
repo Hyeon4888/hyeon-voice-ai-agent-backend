@@ -145,7 +145,7 @@ async def refresh_token(token_request: RefreshTokenRequest, session: Session = D
     if user.refresh_token != token_request.refresh_token:
         raise credentials_exception
     
-    if user.refresh_token_expires and user.refresh_token_expires < datetime.now(timezone.utc):
+    if user.refresh_token_expires and user.refresh_token_expires < datetime.utcnow():
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token has expired",
