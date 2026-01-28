@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.models import init_db
 from app.routers.core.auth.router import router as auth_router
+from app.routers.agents import router as agents_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,6 +29,7 @@ app.add_middleware(
 
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(agents_router)
 
 @app.get("/")
 def read_root():
