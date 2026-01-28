@@ -1,3 +1,8 @@
 fastapi
 uvicorn
 python-dotenv
+sqlmodel
+asyncpg
+pydantic-settings
+passlib[bcrypt]
+pyjwt
