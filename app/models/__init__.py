@@ -1,6 +1,5 @@
 from sqlmodel import SQLModel
-from app.models.table.realtime_agent import RealtimeAgent
-from app.models.table.custom_agent import CustomAgent
+from app.models.table.agent import Agent
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker

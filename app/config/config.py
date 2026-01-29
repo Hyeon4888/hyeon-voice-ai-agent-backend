@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     LIVEKIT_API_KEY: str
     LIVEKIT_API_SECRET: str
     LIVEKIT_URL: str
+    API_SECRET_KEY: str
     
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

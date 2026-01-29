@@ -1,79 +1,62 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header, Security
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Union
-from ..models.table.realtime_agent import RealtimeAgent
-from ..models.table.custom_agent import CustomAgent
+from typing import List
+from ..models.table.agent import Agent
 from ..models.table.user import User
 from ..models import get_session
 from ..routers.core.auth.router import get_current_user
 from livekit.api import AccessToken, VideoGrants
 from ..config.config import settings
 from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter(
     prefix="/agents",
     tags=["agents"],
     responses={404: {"description": "Not found"}},
 )
+
 class AgentCreate(BaseModel):
     name: str
-    type: str  # "realtime" or "custom"
+    type: str = "realtime"
 
-class RealtimeAgentUpdate(BaseModel):
-    model: str | None = None
-    voice: str | None = None
-    system_prompt: str | None = None
-    greeting_prompt: str | None = None
+class AgentUpdate(BaseModel):
+    model: Optional[str] = None
+    voice: Optional[str] = None
+    system_prompt: Optional[str] = None
+    greeting_prompt: Optional[str] = None
 
-class CustomAgentUpdate(BaseModel):
-    llm_websocket_url: str | None = None
-
-@router.post("/create", response_model=Union[RealtimeAgent, CustomAgent])
+@router.post("/create", response_model=Agent)
 async def create_agent(agent_in: AgentCreate, session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
     # Check for duplicate agent name under the same user
-    if agent_in.type == "realtime":
-        existing_statement = select(RealtimeAgent).where(
-            RealtimeAgent.name == agent_in.name,
-            RealtimeAgent.user_id == current_user.id
-        )
-        existing_result = await session.execute(existing_statement)
-        if existing_result.scalars().first():
-            raise HTTPException(status_code=400, detail="An agent with this name already exists")
-        
-        agent = RealtimeAgent(
-            name=agent_in.name,
-            user_id=current_user.id
-        )
-    elif agent_in.type == "custom":
-        existing_statement = select(CustomAgent).where(
-            CustomAgent.name == agent_in.name,
-            CustomAgent.user_id == current_user.id
-        )
-        existing_result = await session.execute(existing_statement)
-        if existing_result.scalars().first():
-            raise HTTPException(status_code=400, detail="An agent with this name already exists")
-        
-        agent = CustomAgent(
-            name=agent_in.name,
-            user_id=current_user.id
-        )
-    else:
-        raise HTTPException(status_code=400, detail="Invalid agent type")
+    existing_statement = select(Agent).where(
+        Agent.name == agent_in.name,
+        Agent.user_id == current_user.id
+    )
+    existing_result = await session.execute(existing_statement)
+    if existing_result.scalars().first():
+        raise HTTPException(status_code=400, detail="An agent with this name already exists")
+    
+    agent = Agent(
+        name=agent_in.name,
+        type=agent_in.type,
+        user_id=current_user.id
+    )
 
     session.add(agent)
     await session.commit()
     await session.refresh(agent)
     return agent
 
-@router.put("/update/realtime/{agent_id}", response_model=RealtimeAgent)
-async def update_realtime_agent(
+@router.put("/update/{agent_id}", response_model=Agent)
+async def update_agent(
     agent_id: str,
-    agent_update: RealtimeAgentUpdate,
+    agent_update: AgentUpdate,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
-    statement = select(RealtimeAgent).where(RealtimeAgent.id == agent_id, RealtimeAgent.user_id == current_user.id)
+    statement = select(Agent).where(Agent.id == agent_id, Agent.user_id == current_user.id)
     result = await session.execute(statement)
     agent = result.scalars().first()
     
@@ -92,70 +75,57 @@ async def update_realtime_agent(
     
     await session.commit()
     await session.refresh(agent)
-    return agent
-
-@router.put("/update/custom/{agent_id}", response_model=CustomAgent)
-async def update_custom_agent(
-    agent_id: str,
-    agent_update: CustomAgentUpdate,
-    session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user)
-):
-    statement = select(CustomAgent).where(CustomAgent.id == agent_id, CustomAgent.user_id == current_user.id)
-    result = await session.execute(statement)
-    agent = result.scalars().first()
-    
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    
-    # Update fields if provided
-    if agent_update.llm_websocket_url is not None:
-        agent.llm_websocket_url = agent_update.llm_websocket_url
-    
-    await session.commit()
     await session.refresh(agent)
     return agent
 
-@router.get("/get/{agent_id}", response_model=Union[RealtimeAgent, CustomAgent])
+async def verify_api_key_or_user(
+    authorization: Optional[str] = Header(None),
+    current_user: Optional[User] = Depends(get_current_user)
+) -> dict:
+    # Check for API Key first
+    if authorization:
+        scheme, _, param = authorization.partition(" ")
+        if scheme.lower() == "bearer" and param == settings.API_SECRET_KEY:
+            return {"type": "api_key", "user_id": None}
+    
+    # Fallback to User
+    if current_user:
+        return {"type": "user", "user": current_user}
+    
+    raise HTTPException(status_code=401, detail="Not authenticated")
+
+@router.get("/get/{agent_id}", response_model=Agent)
 async def get_agent(
     agent_id: str, 
-    type: str, 
     session: AsyncSession = Depends(get_session), 
-    current_user: User = Depends(get_current_user)
+    auth_info: dict = Depends(verify_api_key_or_user)
 ):
-    if type == "realtime":
-        statement = select(RealtimeAgent).where(
-            RealtimeAgent.id == agent_id,
-            RealtimeAgent.user_id == current_user.id
-        )
-        result = await session.execute(statement)
-        agent = result.scalars().first()
-    elif type == "custom":
-        statement = select(CustomAgent).where(
-            CustomAgent.id == agent_id,
-            CustomAgent.user_id == current_user.id
-        )
-        result = await session.execute(statement)
-        agent = result.scalars().first()
+    if auth_info["type"] == "api_key":
+        # API Key access: Fetch agent by ID only
+        statement = select(Agent).where(Agent.id == agent_id)
     else:
-        raise HTTPException(status_code=400, detail="Invalid agent type")
-
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+        # User access: Fetch agent by ID and User ID
+        current_user = auth_info["user"]
+        statement = select(Agent).where(
+            Agent.id == agent_id,
+            Agent.user_id == current_user.id
+        )
     
-    return agent
+    result = await session.execute(statement)
+    agent = result.scalars().first()
+    
+    if agent:
+        return agent
 
-@router.get("/get", response_model=List[Union[RealtimeAgent, CustomAgent]])
+    raise HTTPException(status_code=404, detail="Agent not found")
+
+@router.get("/get", response_model=List[Agent])
 async def read_agents(session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
-    statement_realtime = select(RealtimeAgent).where(RealtimeAgent.user_id == current_user.id)
-    result_realtime = await session.execute(statement_realtime)
-    realtime_agents = result_realtime.scalars().all()
-
-    statement_custom = select(CustomAgent).where(CustomAgent.user_id == current_user.id)
-    result_custom = await session.execute(statement_custom)
-    custom_agents = result_custom.scalars().all()
+    statement = select(Agent).where(Agent.user_id == current_user.id)
+    result = await session.execute(statement)
+    agents = result.scalars().all()
     
-    return [*realtime_agents, *custom_agents]
+    return agents
 
 class TokenResponse(BaseModel):
     token: str
