@@ -116,23 +116,23 @@ async def update_custom_agent(
     await session.refresh(agent)
     return agent
 
-@router.get("/get/{agent_name}", response_model=Union[RealtimeAgent, CustomAgent])
+@router.get("/get/{agent_id}", response_model=Union[RealtimeAgent, CustomAgent])
 async def get_agent(
-    agent_name: str, 
+    agent_id: str, 
     type: str, 
     session: AsyncSession = Depends(get_session), 
     current_user: User = Depends(get_current_user)
 ):
     if type == "realtime":
         statement = select(RealtimeAgent).where(
-            RealtimeAgent.name == agent_name,
+            RealtimeAgent.id == agent_id,
             RealtimeAgent.user_id == current_user.id
         )
         result = await session.execute(statement)
         agent = result.scalars().first()
     elif type == "custom":
         statement = select(CustomAgent).where(
-            CustomAgent.name == agent_name,
+            CustomAgent.id == agent_id,
             CustomAgent.user_id == current_user.id
         )
         result = await session.execute(statement)
