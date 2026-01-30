@@ -25,12 +25,14 @@ router = APIRouter(
 class AgentCreate(BaseModel):
     name: str
     type: str = "realtime"
+    api_key: str
 
 class AgentUpdate(BaseModel):
     model: Optional[str] = None
     voice: Optional[str] = None
     system_prompt: Optional[str] = None
     greeting_prompt: Optional[str] = None
+    api_key: Optional[str] = None
 
 @router.post("/create", response_model=Agent)
 async def create_agent(agent_in: AgentCreate, session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
@@ -46,7 +48,8 @@ async def create_agent(agent_in: AgentCreate, session: AsyncSession = Depends(ge
     agent = Agent(
         name=agent_in.name,
         type=agent_in.type,
-        user_id=current_user.id
+        user_id=current_user.id,
+        api_key=agent_in.api_key
     )
 
     session.add(agent)
@@ -77,6 +80,8 @@ async def update_agent(
         agent.system_prompt = agent_update.system_prompt
     if agent_update.greeting_prompt is not None:
         agent.greeting_prompt = agent_update.greeting_prompt
+    if agent_update.api_key is not None:
+        agent.api_key = agent_update.api_key
     
     await session.commit()
     await session.refresh(agent)

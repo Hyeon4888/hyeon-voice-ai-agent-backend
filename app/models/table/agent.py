@@ -11,6 +11,7 @@ class Agent(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     type: str = Field(default="realtime")
+    api_key: str = Field()
     
     # Realtime configuration fields
     model: Optional[str] = Field(default="gpt-4o-realtime-preview-2024-10-01")
