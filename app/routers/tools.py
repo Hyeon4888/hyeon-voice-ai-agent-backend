@@ -14,21 +14,20 @@ router = APIRouter(
 )
 
 class ToolCreate(BaseModel):
-    id: str
     name: str
-    appointment_tool: bool = False
 
 @router.post("/create", response_model=Tool)
 async def create_tool(tool_in: ToolCreate, session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
-    existing_statement = select(Tool).where(Tool.id == tool_in.id)
+    tool_id = f"{current_user.id}_{tool_in.name}"
+    
+    existing_statement = select(Tool).where(Tool.id == tool_id)
     existing_result = await session.execute(existing_statement)
     if existing_result.scalars().first():
-        raise HTTPException(status_code=400, detail="Tool ID already exists")
+        raise HTTPException(status_code=400, detail="Tool with this name already exists for this user")
 
     tool = Tool(
-        id=tool_in.id,
+        id=tool_id,
         name=tool_in.name,
-        appointment_tool=tool_in.appointment_tool,
         user_id=current_user.id
     )
 
