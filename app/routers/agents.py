@@ -1,4 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Header, Security
+import logging
+
+# Configure logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
@@ -80,18 +85,60 @@ async def update_agent(
 
 async def verify_api_key_or_user(
     authorization: Optional[str] = Header(None),
-    current_user: Optional[User] = Depends(get_current_user)
+    session: AsyncSession = Depends(get_session)
 ) -> dict:
-    # Check for API Key first
-    if authorization:
-        scheme, _, param = authorization.partition(" ")
-        if scheme.lower() == "bearer" and param == settings.API_SECRET_KEY:
-            return {"type": "api_key", "user_id": None}
+    # DEBUG LOGGING
+    logger.info("DEBUG: verify_api_key_or_user called")
     
-    # Fallback to User
-    if current_user:
-        return {"type": "user", "user": current_user}
+    if not authorization:
+        logger.info("DEBUG: No authorization header")
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    scheme, _, param = authorization.partition(" ")
+    logger.info(f"DEBUG: scheme: '{scheme}', param: '{param}'")
+
+    # 1. Check for API Key
+    if scheme.lower() == "bearer" and param == settings.API_SECRET_KEY:
+        logger.info("DEBUG: API Key matched")
+        return {"type": "api_key", "user_id": None}
     
+    # 2. Check for User (JWT)
+    # We manually invoke the logic from get_current_user here to avoid strict dependency failures
+    # Since get_current_user is complex to import and call manually with dependencies, 
+    # we will attempt to decode the JWT here directly or use a helper if possible.
+    # A cleaner way is to try-except the jwt decoding.
+    
+    from ..routers.core.auth.router import oauth2_scheme, ALGORITHM, SECRET_KEY, User
+    import jwt
+
+    logger.info("DEBUG: Checking for User JWT")
+    try:
+        # Verify JWT
+        payload = jwt.decode(param, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            logger.info("DEBUG: JWT missing email")
+            raise HTTPException(status_code=401, detail="Invalid token")
+            
+        # Fetch user
+        statement = select(User).where(User.email == email)
+        result = await session.execute(statement)
+        user = result.scalars().first()
+        
+        if user:
+            logger.info(f"DEBUG: User authenticated: {user.email}")
+            return {"type": "user", "user": user}
+        else:
+             logger.info("DEBUG: User not found in DB")
+    except jwt.PyJWTError as e:
+        logger.info(f"DEBUG: JWT Error: {e}")
+        # If it was an API key attempt, we already failed that check.
+        # If it was a JWT attempt, it failed here.
+        pass
+    except Exception as e:
+        logger.error(f"DEBUG: Unexpected auth error: {e}")
+
+    logger.info("DEBUG: Authentication failed (neither API Key nor valid User Token)")
     raise HTTPException(status_code=401, detail="Not authenticated")
 
 @router.get("/get/{agent_id}", response_model=Agent)
@@ -132,9 +179,14 @@ class TokenResponse(BaseModel):
     url: str
 
 @router.get("/token", response_model=TokenResponse)
-async def get_token(current_user: User = Depends(get_current_user)):
+async def get_token(agent_id: str,current_user: User = Depends(get_current_user)):
     grant = VideoGrants(room_join=True, room="voice-assistant-room", can_publish=True, can_subscribe=True)
-    access_token = AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET, identity=f"user-{current_user.id}", name=current_user.name, grants=grant)
+    access_token = (
+        AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
+        .with_identity(str(current_user.id))
+        .with_grants(grant)
+        .with_attributes({"agent_id": agent_id})
+    )
     
     return TokenResponse(
         token=access_token.to_jwt(),
