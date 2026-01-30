@@ -1,6 +1,7 @@
 from sqlmodel import SQLModel, Field
-from typing import Optional
+from typing import Optional, List, Dict
 from datetime import date, time
+from sqlalchemy import Column, JSON
 
 class History(SQLModel, table=True):
     __tablename__ = "voice-agent-history"
@@ -12,4 +13,4 @@ class History(SQLModel, table=True):
     time: time
     duration: int
     summary: Optional[str] = Field(default=None)
-    conversation: Optional[str] = Field(default=None)
+    conversation: List[dict] = Field(default=[], sa_column=Column(JSON))

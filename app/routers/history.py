@@ -21,7 +21,7 @@ class HistoryCreate(SQLModel):
     time: time
     duration: int
     summary: Optional[str] = None
-    conversation: Optional[str] = None
+    conversation: List[dict] = []
 
 @router.post("/create", response_model=History)
 async def create_history(
