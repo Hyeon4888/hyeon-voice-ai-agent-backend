@@ -1,6 +1,7 @@
 from sqlmodel import SQLModel
 from app.models.table.agent import Agent
 from app.models.table.api_key import ApiKey
+from app.models.table.tool import Tool
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
