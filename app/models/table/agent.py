@@ -19,6 +19,8 @@ class Agent(SQLModel, table=True):
     system_prompt: Optional[str] = Field(default="You are a helpful AI assistant.")
     greeting_prompt: Optional[str] = Field(default="Hello, how can I help you today?")
     
+    tool_id: Optional[str] = Field(default=None, foreign_key="voice-agent-tool.id")
+    
     def __init__(self, **data):
         if "id" not in data and "name" in data and "user_id" in data:
             # Generate composite ID from name, timestamp, and user_id
