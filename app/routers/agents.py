@@ -25,7 +25,7 @@ router = APIRouter(
 class AgentCreate(BaseModel):
     name: str
     type: str = "realtime"
-    api_key: str
+    api_key: Optional[str] = None
 
 class AgentUpdate(BaseModel):
     model: Optional[str] = None
