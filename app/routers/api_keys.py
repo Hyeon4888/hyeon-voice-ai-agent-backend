@@ -46,7 +46,7 @@ async def list_api_keys(session: AsyncSession = Depends(get_session), current_us
     api_keys = result.scalars().all()
     return api_keys
 
-@router.get("/{name}", response_model=ApiKey)
+@router.get("/get/{name}", response_model=ApiKey)
 async def get_api_key(name: str, session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
     statement = select(ApiKey).where(ApiKey.name == name, ApiKey.user_id == current_user.id)
     result = await session.execute(statement)
@@ -57,7 +57,7 @@ async def get_api_key(name: str, session: AsyncSession = Depends(get_session), c
     
     return api_key
 
-@router.delete("/{name}")
+@router.delete("/delete/{name}")
 async def delete_api_key(name: str, session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
     statement = select(ApiKey).where(ApiKey.name == name, ApiKey.user_id == current_user.id)
     result = await session.execute(statement)

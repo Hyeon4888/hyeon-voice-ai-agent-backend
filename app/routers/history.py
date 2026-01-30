@@ -53,7 +53,7 @@ async def create_history(
     await session.refresh(history)
     return history
 
-@router.get("/get", response_model=List[History])
+@router.get("/get/{agent_id}", response_model=List[History])
 async def read_history(agent_id: str, session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
     statement = select(History).where(History.user_id == current_user.id, History.agent_id == agent_id).order_by(History.date.desc(), History.time.desc())
 
