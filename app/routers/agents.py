@@ -10,7 +10,7 @@ from typing import List
 from ..models.table.agent import Agent
 from ..models.table.user import User
 from ..models import get_session
-from ..routers.core.auth.router import get_current_user
+from ..routers.core.auth.router import get_current_user, verify_api_key_or_user
 from livekit.api import AccessToken, VideoGrants
 from ..config.config import settings
 from pydantic import BaseModel
@@ -70,82 +70,20 @@ async def update_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
-    # Update fields if provided
-    if agent_update.model is not None:
-        agent.model = agent_update.model
-    if agent_update.voice is not None:
-        agent.voice = agent_update.voice
-    if agent_update.system_prompt is not None:
-        agent.system_prompt = agent_update.system_prompt
-    if agent_update.greeting_prompt is not None:
-        agent.greeting_prompt = agent_update.greeting_prompt
-    if agent_update.api_key is not None:
-        agent.api_key = agent_update.api_key
-    if agent_update.tool_id is not None:
-        agent.tool_id = agent_update.tool_id
+    # Debug logging
+    logger.info(f"DEBUG: Updating agent {agent_id}. Received: {agent_update.model_dump(exclude_unset=True)}")
+    
+    # Update fields if provided in matching schema
+    update_data = agent_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        if hasattr(agent, key):
+            setattr(agent, key, value)
     
     await session.commit()
     await session.refresh(agent)
     await session.refresh(agent)
     return agent
 
-async def verify_api_key_or_user(
-    authorization: Optional[str] = Header(None),
-    session: AsyncSession = Depends(get_session)
-) -> dict:
-    # DEBUG LOGGING
-    logger.info("DEBUG: verify_api_key_or_user called")
-    
-    if not authorization:
-        logger.info("DEBUG: No authorization header")
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    scheme, _, param = authorization.partition(" ")
-    logger.info(f"DEBUG: scheme: '{scheme}', param: '{param}'")
-
-    # 1. Check for API Key
-    if scheme.lower() == "bearer" and param == settings.API_SECRET_KEY:
-        logger.info("DEBUG: API Key matched")
-        return {"type": "api_key", "user_id": None}
-    
-    # 2. Check for User (JWT)
-    # We manually invoke the logic from get_current_user here to avoid strict dependency failures
-    # Since get_current_user is complex to import and call manually with dependencies, 
-    # we will attempt to decode the JWT here directly or use a helper if possible.
-    # A cleaner way is to try-except the jwt decoding.
-    
-    from ..routers.core.auth.router import oauth2_scheme, ALGORITHM, SECRET_KEY, User
-    import jwt
-
-    logger.info("DEBUG: Checking for User JWT")
-    try:
-        # Verify JWT
-        payload = jwt.decode(param, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
-            logger.info("DEBUG: JWT missing email")
-            raise HTTPException(status_code=401, detail="Invalid token")
-            
-        # Fetch user
-        statement = select(User).where(User.email == email)
-        result = await session.execute(statement)
-        user = result.scalars().first()
-        
-        if user:
-            logger.info(f"DEBUG: User authenticated: {user.email}")
-            return {"type": "user", "user": user}
-        else:
-             logger.info("DEBUG: User not found in DB")
-    except jwt.PyJWTError as e:
-        logger.info(f"DEBUG: JWT Error: {e}")
-        # If it was an API key attempt, we already failed that check.
-        # If it was a JWT attempt, it failed here.
-        pass
-    except Exception as e:
-        logger.error(f"DEBUG: Unexpected auth error: {e}")
-
-    logger.info("DEBUG: Authentication failed (neither API Key nor valid User Token)")
-    raise HTTPException(status_code=401, detail="Not authenticated")
 
 @router.get("/get/{agent_id}", response_model=Agent)
 async def get_agent(

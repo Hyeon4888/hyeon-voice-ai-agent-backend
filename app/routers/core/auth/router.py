@@ -1,9 +1,16 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Header
 from pydantic import BaseModel
 from sqlmodel import select, Session
 from app.models import get_session
 from app.models.table.user import User
 from app.utils.security import get_password_hash, verify_password, create_access_token, create_refresh_token
+from typing import Optional
+from app.config.config import settings
+import logging
+
+# Configure logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 router = APIRouter()
 
@@ -162,3 +169,50 @@ async def refresh_token(token_request: RefreshTokenRequest, session: Session = D
     await session.commit()
     
     return {"access_token": new_access_token, "refresh_token": new_refresh_token, "token_type": "bearer"}
+
+async def verify_api_key_or_user(
+    authorization: Optional[str] = Header(None),
+    session: Session = Depends(get_session)
+) -> dict:
+    # DEBUG LOGGING
+    logger.info("DEBUG: verify_api_key_or_user called")
+    
+    if not authorization:
+        logger.info("DEBUG: No authorization header")
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    scheme, _, param = authorization.partition(" ")
+    logger.info(f"DEBUG: scheme: '{scheme}', param: '{param}'")
+
+    # 1. Check for API Key
+    if scheme.lower() == "bearer" and param == settings.API_SECRET_KEY:
+        logger.info("DEBUG: API Key matched")
+        return {"type": "api_key", "user_id": None}
+    
+    # 2. Check for User (JWT)
+    logger.info("DEBUG: Checking for User JWT")
+    try:
+        # Verify JWT
+        payload = jwt.decode(param, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            logger.info("DEBUG: JWT missing email")
+            raise HTTPException(status_code=401, detail="Invalid token")
+            
+        # Fetch user
+        statement = select(User).where(User.email == email)
+        result = await session.execute(statement)
+        user = result.scalars().first()
+        
+        if user:
+            logger.info(f"DEBUG: User authenticated: {user.email}")
+            return {"type": "user", "user": user}
+        else:
+             logger.info("DEBUG: User not found in DB")
+    except jwt.PyJWTError as e:
+        logger.info(f"DEBUG: JWT Error: {e}")
+    except Exception as e:
+        logger.error(f"DEBUG: Unexpected auth error: {e}")
+
+    logger.info("DEBUG: Authentication failed (neither API Key nor valid User Token)")
+    raise HTTPException(status_code=401, detail="Not authenticated")
