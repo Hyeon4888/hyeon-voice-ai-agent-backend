@@ -15,6 +15,7 @@ from livekit.api import AccessToken, VideoGrants
 from ..config.config import settings
 from pydantic import BaseModel
 from typing import Optional
+from uuid import UUID
 
 router = APIRouter(
     prefix="/agents",
@@ -33,6 +34,7 @@ class AgentUpdate(BaseModel):
     greeting_prompt: Optional[str] = None
     api_key: Optional[str] = None
     tool_id: Optional[str] = None
+    inbound_id: Optional[UUID] = None
 
 @router.post("/create", response_model=Agent)
 async def create_agent(agent_in: AgentCreate, session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
