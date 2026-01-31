@@ -16,6 +16,8 @@ from ..config.config import settings
 from pydantic import BaseModel
 from typing import Optional
 from uuid import UUID
+from ..services import livekit_sip
+from ..models.table.phone_number import PhoneNumber
 
 router = APIRouter(
     prefix="/agents",
@@ -58,6 +60,7 @@ async def create_agent(agent_in: AgentCreate, session: AsyncSession = Depends(ge
     await session.refresh(agent)
     return agent
 
+
 @router.put("/update/{agent_id}", response_model=Agent)
 async def update_agent(
     agent_id: str,
@@ -72,8 +75,45 @@ async def update_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
+    # Check if inbound_id is being updated
+    # Check if inbound_id is being updated
+    if agent_update.inbound_id != agent.inbound_id:
+        
+        # CASE 1: Removing the inbound number (new is None, old was not None)
+        if agent_update.inbound_id is None and agent.inbound_id is not None:
+             # Fetch the old phone number details to delete the trunk
+            old_phone_statement = select(PhoneNumber).where(PhoneNumber.id == agent.inbound_id)
+            old_phone_result = await session.execute(old_phone_statement)
+            old_phone_number_record = old_phone_result.scalars().first()
+            
+            if old_phone_number_record:
+                logger.info(f"Agent {agent_id} removing inbound number {old_phone_number_record.number}. Deleting SIP trunk...")
+                await livekit_sip.delete_sip_inbound_trunk_by_number(old_phone_number_record.number)
+
+        # CASE 2: Adding or Changing the inbound number
+        elif agent_update.inbound_id is not None:
+             # Fetch the phone number details
+            phone_statement = select(PhoneNumber).where(PhoneNumber.id == agent_update.inbound_id)
+            phone_result = await session.execute(phone_statement)
+            phone_number_record = phone_result.scalars().first()
+            logger.info(f"Phone number record: {phone_number_record}")
+            
+            if phone_number_record:
+                # Create SIP trunk asynchronously (fire and forget, or await if critical)
+                # Awaiting here to ensure it works before confirming update, 
+                # though in prod you might want to background task this.
+                await livekit_sip.create_sip_inbound_trunk(agent.name, phone_number_record.number)
+
+
+    
     # Debug logging
-    logger.info(f"DEBUG: Updating agent {agent_id}. Received: {agent_update.model_dump(exclude_unset=True)}")
+    update_data_log = agent_update.model_dump(exclude_unset=True)
+    if 'system_prompt' in update_data_log and update_data_log['system_prompt']:
+        update_data_log['system_prompt'] = update_data_log['system_prompt'][:50] + "..."
+    if 'greeting_prompt' in update_data_log and update_data_log['greeting_prompt']:
+        update_data_log['greeting_prompt'] = update_data_log['greeting_prompt'][:50] + "..."
+        
+    logger.info(f"Updating agent {agent_id}. Received: {update_data_log}")
     
     # Update fields if provided in matching schema
     update_data = agent_update.model_dump(exclude_unset=True)
