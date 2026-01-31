@@ -20,6 +20,7 @@ class Agent(SQLModel, table=True):
     greeting_prompt: Optional[str] = Field(default="Hello, how can I help you today?")
     
     tool_id: Optional[str] = Field(default=None, foreign_key="voice-agent-tool.id")
+    inbound_id: Optional[str] = Field(default=None, foreign_key="phone_number.id")
     
     def __init__(self, **data):
         if "id" not in data and "name" in data and "user_id" in data:
